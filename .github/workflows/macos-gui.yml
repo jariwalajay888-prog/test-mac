@@ -38,6 +38,13 @@ jobs:
           sudo dscl . -passwd /Users/vncuser "Mac@1234"
           sudo dscl . -append /Groups/admin GroupMembership vncuser
           sudo createhomedir -c -u vncuser 2>/dev/null || true
+          # Skip macOS setup wizard for vncuser
+          sudo -u vncuser defaults write com.apple.SetupAssistant DidSeePrivacyConsent -bool true
+          sudo -u vncuser defaults write com.apple.SetupAssistant DidSeeCloudSetup -bool true
+          sudo -u vncuser defaults write com.apple.SetupAssistant DidSeeSiriSetup -bool true
+          sudo -u vncuser defaults write com.apple.SetupAssistant GestureMovieSeen none
+          sudo -u vncuser defaults write com.apple.SetupAssistant LastSeenCloudProductVersion "$(sw_vers -productVersion)"
+          sudo -u vncuser defaults write com.apple.SetupAssistant LastSeenBuddyBuildVersion "$(sw_vers -buildVersion)"
           echo "vncuser created with password Mac@1234"
 
       - name: Enable VNC Screen Sharing
