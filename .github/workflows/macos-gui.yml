@@ -9,13 +9,18 @@ jobs:
     steps:
       - name: Enable VNC Screen Sharing
         run: |
+          # Set password for runner user
+          sudo dscl . -passwd /Users/runner Mac@1234
+          
+          # Enable Screen Sharing with all users access
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
             -activate -configure -access -on \
-            -clientopts -setvnclegacy -vnclegacy yes \
-            -clientopts -setvncpw -vncpw "Mac@1234" \
-            -restart -agent -privs -all
+            -allowAccessFor -allUsers \
+            -privs -all \
+            -restart -agent
+          
           sudo launchctl load -w /System/Library/LaunchDaemons/com.apple.screensharing.plist 2>/dev/null || true
-          echo "VNC enabled on port 5900"
+          echo "VNC enabled - Username: runner, Password: Mac@1234"
 
       - name: Install noVNC and websockify
         run: |
