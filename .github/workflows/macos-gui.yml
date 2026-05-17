@@ -3,7 +3,7 @@ on: workflow_dispatch
 
 jobs:
   gui:
-    runs-on: macos-latest
+    runs-on: macos-14
     timeout-minutes: 355
 
     steps:
@@ -13,136 +13,39 @@ jobs:
           open -a Safari
           sleep 4
 
-      - name: Install cliclick (mouse/keyboard control)
-        run: brew install cliclick
-
-      - name: Write Python remote desktop server
+      - name: Enable VNC with VNC-only password
         run: |
-          cat > /tmp/remotedesktop.py << 'PYEOF'
-          import subprocess, threading, time, os
-          from http.server import HTTPServer, BaseHTTPRequestHandler
-          from urllib.parse import urlparse, parse_qs
+          sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
+            -activate -configure \
+            -allowAccessFor -allUsers \
+            -privs -all \
+            -clientopts -setvnclegacy -vnclegacy yes \
+            -clientopts -setvncpw -vncpw "Mac@1234" \
+            -restart -agent
+          sleep 3
+          sudo launchctl load -w /System/Library/LaunchDaemons/com.apple.screensharing.plist 2>/dev/null || true
+          sleep 2
+          echo "VNC ready - Password: Mac@1234"
 
-          SHOT = '/tmp/screen.png'
+      - name: Install noVNC and websockify
+        run: |
+          pip3 install websockify --break-system-packages
+          git clone https://github.com/novnc/noVNC.git /tmp/novnc
 
-          def snap():
-              subprocess.run(['screencapture', '-x', '-t', 'png', SHOT], capture_output=True)
-
-          def bg():
-              while True:
-                  snap()
-                  time.sleep(0.4)
-
-          class H(BaseHTTPRequestHandler):
-              def log_message(self, *a): pass
-              def do_GET(self):
-                  p = urlparse(self.path)
-                  q = parse_qs(p.query)
-                  if p.path == '/':
-                      self.page()
-                  elif p.path == '/s':
-                      self.shot()
-                  elif p.path == '/c':
-                      subprocess.run(['cliclick', 'c:%s,%s' % (q['x'][0], q['y'][0])])
-                      self.ok()
-                  elif p.path == '/rc':
-                      subprocess.run(['cliclick', 'rc:%s,%s' % (q['x'][0], q['y'][0])])
-                      self.ok()
-                  elif p.path == '/m':
-                      subprocess.run(['cliclick', 'm:%s,%s' % (q['x'][0], q['y'][0])])
-                      self.ok()
-                  elif p.path == '/dc':
-                      subprocess.run(['cliclick', 'dc:%s,%s' % (q['x'][0], q['y'][0])])
-                      self.ok()
-                  elif p.path == '/t':
-                      txt = q.get('v', [''])[0]
-                      subprocess.run(['cliclick', 't:' + txt])
-                      self.ok()
-                  elif p.path == '/k':
-                      key = q.get('v', [''])[0]
-                      subprocess.run(['cliclick', 'kp:' + key])
-                      self.ok()
-                  elif p.path == '/cmd':
-                      cmd = q.get('v', [''])[0]
-                      subprocess.run(['osascript', '-e', 'tell application "System Events" to keystroke "%s" using command down' % cmd])
-                      self.ok()
-                  else:
-                      self.send_response(404); self.end_headers()
-              def ok(self):
-                  self.send_response(200); self.end_headers(); self.wfile.write(b'ok')
-              def shot(self):
-                  try:
-                      d = open(SHOT,'rb').read()
-                      self.send_response(200)
-                      self.send_header('Content-Type','image/png')
-                      self.send_header('Content-Length', len(d))
-                      self.send_header('Cache-Control','no-cache')
-                      self.end_headers(); self.wfile.write(d)
-                  except: self.send_response(503); self.end_headers()
-              def page(self):
-                  html = b'''<!DOCTYPE html><html><head><title>macOS Remote</title>
-          <style>*{margin:0;padding:0;box-sizing:border-box}body{background:#111;color:#eee;font-family:sans-serif}
-          #bar{background:#222;padding:6px 10px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-          #bar input{background:#333;color:#eee;border:1px solid #555;padding:4px 8px;border-radius:3px}
-          #bar button{background:#444;color:#eee;border:1px solid #666;padding:4px 10px;border-radius:3px;cursor:pointer}
-          #bar button:hover{background:#666}#wrap{text-align:center}
-          #scr{cursor:crosshair;max-width:100%;display:block;margin:auto}
-          #fps{font-size:12px;color:#aaa}</style></head>
-          <body><div id="bar">
-          <b>macOS Remote Desktop</b>
-          <input id="ti" placeholder="Type text..." size="28">
-          <button onclick="sendText()">Send</button>
-          <button onclick="key('return')">Enter</button>
-          <button onclick="key('tab')">Tab</button>
-          <button onclick="key('space')">Space</button>
-          <button onclick="key('delete')">Delete</button>
-          <button onclick="key('escape')">Esc</button>
-          <button onclick="kcmd(\'space\')">Cmd+Space</button>
-          <button onclick="kcmd(\'c\')">Cmd+C</button>
-          <button onclick="kcmd(\'v\')">Cmd+V</button>
-          <button onclick="kcmd(\'z\')">Cmd+Z</button>
-          <span id="fps">FPS: -</span></div>
-          <div id="wrap"><img id="scr" src="/s"></div>
-          <script>
-          var fc=0,lt=Date.now();
-          function upd(){var i=document.getElementById("scr");var n=new Image();
-          n.onload=function(){i.src=n.src;fc++;var now=Date.now();if(now-lt>1000){document.getElementById("fps").textContent="FPS: "+fc;fc=0;lt=now;}setTimeout(upd,350);};
-          n.onerror=function(){setTimeout(upd,1000);};n.src="/s?_="+Date.now();}
-          function pos(e){var r=e.target.getBoundingClientRect();var sx=e.target.naturalWidth/r.width;var sy=e.target.naturalHeight/r.height;return[Math.round((e.clientX-r.left)*sx),Math.round((e.clientY-r.top)*sy)];}
-          document.getElementById("scr").addEventListener("click",function(e){var p=pos(e);fetch("/c?x="+p[0]+"&y="+p[1]);});
-          document.getElementById("scr").addEventListener("contextmenu",function(e){e.preventDefault();var p=pos(e);fetch("/rc?x="+p[0]+"&y="+p[1]);});
-          document.getElementById("scr").addEventListener("dblclick",function(e){var p=pos(e);fetch("/dc?x="+p[0]+"&y="+p[1]);});
-          function sendText(){var v=document.getElementById("ti").value;if(v){fetch("/t?v="+encodeURIComponent(v));document.getElementById("ti").value="";}}
-          function key(k){fetch("/k?v="+encodeURIComponent(k));}
-          function kcmd(k){fetch("/cmd?v="+encodeURIComponent(k));}
-          document.getElementById("ti").addEventListener("keydown",function(e){if(e.key==="Enter")sendText();});
-          upd();
-          </script></body></html>'''
-                  self.send_response(200)
-                  self.send_header('Content-Type','text/html')
-                  self.send_header('Content-Length', len(html))
-                  self.end_headers(); self.wfile.write(html)
-
-          snap()
-          threading.Thread(target=bg, daemon=True).start()
-          print("Remote desktop running on :6080")
-          HTTPServer(('0.0.0.0', 6080), H).serve_forever()
-          PYEOF
-
-      - name: Start remote desktop server
-        run: python3 /tmp/remotedesktop.py &
+      - name: Start noVNC proxy
+        run: |
+          /tmp/novnc/utils/novnc_proxy --vnc localhost:5900 --listen 6080 &
+          sleep 3
 
       - name: Install and start Cloudflare tunnel
         run: |
           brew install cloudflared
           cloudflared tunnel --url http://localhost:6080 &
           sleep 10
-          echo "========================================="
+          echo "========================================"
           echo "  OPEN THE trycloudflare.com URL ABOVE  "
-          echo "  Left-click = click, Right-click = menu"
-          echo "  Double-click = open app               "
-          echo "  Type in box then press Send           "
-          echo "========================================="
+          echo "  VNC Password: Mac@1234                "
+          echo "========================================"
 
       - name: Keep alive (6 hours)
         run: sleep 21300
