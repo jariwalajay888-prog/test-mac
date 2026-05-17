@@ -25,15 +25,12 @@ jobs:
           tmate -S /tmp/tmate.sock new-session -d
           tmate -S /tmp/tmate.sock wait tmate-ready
           TMATE_SSH=$(tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}')
+          FORWARD_CMD=$(echo "$TMATE_SSH" | sed 's/^ssh /ssh -L 5900:localhost:5900 /')
           echo ""
           echo "========================================="
           echo "COPY THIS COMMAND AND RUN IN POWERSHELL:"
           echo ""
-          # Extract host and port from tmate ssh command
-          HOST=$(echo $TMATE_SSH | grep -oP '(?<=@)[^ ]+' | head -1)
-          PORT=$(echo $TMATE_SSH | grep -oP '(?<=-p )\d+' | head -1)
-          USER=$(echo $TMATE_SSH | grep -oP '(?<=ssh )[^@]+')
-          echo "ssh -L 5900:localhost:5900 -p $PORT $USER@$HOST"
+          echo "$FORWARD_CMD"
           echo ""
           echo "Then open VNC Viewer -> connect to: localhost:5900"
           echo "VNC Password: Mac@1234"
