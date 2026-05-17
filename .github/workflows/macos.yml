@@ -1,0 +1,17 @@
+name: macOS Test
+on: [workflow_dispatch]  # Manual trigger
+
+jobs:
+  test:
+    runs-on: macos-latest  # This gives you macOS!
+    steps:
+      - name: Check macOS version
+        run: |
+          sw_vers
+          uname -a
+      - name: Install tools
+        run: |
+          brew install python
+          python --version
+      - name: Keep alive (20 mins max)
+        run: sleep 1200
