@@ -9,23 +9,24 @@ jobs:
     steps:
       - name: Enable VNC Screen Sharing
         run: |
-          # Set runner password using passwd (root doesn't need old password)
-          printf "Mac@1234\nMac@1234\n" | sudo passwd runner
-          
-          # Open Finder so screen isn't black
+          # Open some apps to populate the screen
           open -a Finder &
+          open -a Terminal &
           sleep 5
           
-          # Enable Screen Sharing
-          sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
-            -activate -configure -access -on \
-            -allowAccessFor -allUsers \
-            -privs -all \
-            -restart -agent
+          # Install x11vnc which uses CoreGraphics to capture macOS screen directly
+          brew install x11vnc
           
-          sudo launchctl load -w /System/Library/LaunchDaemons/com.apple.screensharing.plist 2>/dev/null || true
-          sleep 5
-          echo "VNC ready - Username: runner  Password: Mac@1234"
+          # Create VNC password
+          mkdir -p ~/.vnc
+          x11vnc -storepasswd Mac@1234 /tmp/vncpasswd
+          
+          # Start x11vnc - tries display :0 first, then falls back to screenshot mode
+          x11vnc -display :0 -rfbauth /tmp/vncpasswd -rfbport 5900 -forever -bg -noxdamage 2>/dev/null || \
+          x11vnc -rawfb screenshot -rfbauth /tmp/vncpasswd -rfbport 5900 -forever -bg
+          
+          sleep 3
+          echo "VNC ready on port 5900 - Password: Mac@1234"
 
       - name: Install noVNC and websockify
         run: |
