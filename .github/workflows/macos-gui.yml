@@ -17,22 +17,26 @@ jobs:
           sudo launchctl load -w /System/Library/LaunchDaemons/com.apple.screensharing.plist 2>/dev/null || true
           echo "VNC enabled on port 5900"
 
-      - name: Install tmate
-        run: brew install tmate
-
-      - name: Start tmate session
+      - name: Install noVNC and websockify
         run: |
-          tmate -S /tmp/tmate.sock new-session -d
-          tmate -S /tmp/tmate.sock wait tmate-ready
-          TMATE_SSH=$(tmate -S /tmp/tmate.sock display -p '#{tmate_ssh}')
-          FORWARD_CMD=$(echo "$TMATE_SSH" | sed 's/^ssh /ssh -L 5900:localhost:5900 /')
+          pip3 install websockify
+          git clone https://github.com/novnc/noVNC.git /tmp/novnc
+
+      - name: Start noVNC proxy
+        run: |
+          /tmp/novnc/utils/novnc_proxy --vnc localhost:5900 --listen 6080 &
+          sleep 3
+          echo "noVNC running on port 6080"
+
+      - name: Install and start Cloudflare tunnel
+        run: |
+          brew install cloudflared
+          cloudflared tunnel --url http://localhost:6080 &
+          sleep 8
           echo ""
           echo "========================================="
-          echo "COPY THIS COMMAND AND RUN IN POWERSHELL:"
-          echo ""
-          echo "$FORWARD_CMD"
-          echo ""
-          echo "Then open VNC Viewer -> connect to: localhost:5900"
+          echo "OPEN THIS URL IN YOUR BROWSER:"
+          echo "(check above lines for: trycloudflare.com URL)"
           echo "VNC Password: Mac@1234"
           echo "========================================="
 
