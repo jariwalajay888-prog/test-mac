@@ -13,7 +13,21 @@ jobs:
           open -a Safari
           sleep 4
 
-      - name: Enable VNC with VNC-only password
+      - name: Create vncuser with known password
+        run: |
+          # Create brand-new local user (dscl -passwd works on new user, no old pw needed)
+          sudo dscl . -create /Users/vncuser
+          sudo dscl . -create /Users/vncuser UserShell /bin/bash
+          sudo dscl . -create /Users/vncuser RealName "VNC User"
+          sudo dscl . -create /Users/vncuser UniqueID 503
+          sudo dscl . -create /Users/vncuser PrimaryGroupID 80
+          sudo dscl . -create /Users/vncuser NFSHomeDirectory /Users/vncuser
+          sudo dscl . -passwd /Users/vncuser "Mac@1234"
+          sudo dscl . -append /Groups/admin GroupMembership vncuser
+          sudo createhomedir -c -u vncuser 2>/dev/null || true
+          echo "vncuser created with password Mac@1234"
+
+      - name: Enable VNC Screen Sharing
         run: |
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
             -activate -configure \
@@ -25,7 +39,7 @@ jobs:
           sleep 3
           sudo launchctl load -w /System/Library/LaunchDaemons/com.apple.screensharing.plist 2>/dev/null || true
           sleep 2
-          echo "VNC ready - Password: Mac@1234"
+          echo "VNC ready - Username: vncuser  Password: Mac@1234"
 
       - name: Install noVNC and websockify
         run: |
