@@ -9,8 +9,8 @@ jobs:
     steps:
       - name: Enable VNC Screen Sharing
         run: |
-          # Set password for runner user
-          sudo dscl . -passwd /Users/runner Mac@1234
+          # Change runner password (old password is empty "")
+          sudo dscl . -passwd /Users/runner "" "Mac@1234"
           
           # Enable Screen Sharing with all users access
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
