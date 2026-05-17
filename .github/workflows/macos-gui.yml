@@ -13,25 +13,14 @@ jobs:
           open -a Safari
           sleep 4
 
-      - name: Lower resolution and disable animations (reduces VNC lag)
+      - name: Disable macOS animations (smoother DeskIn experience)
         run: |
-          # Lower screen resolution → less pixels = less VNC data
-          brew install jakehilborn/jakehilborn/displayplacer 2>/dev/null || true
-          DISPLAY_ID=$(displayplacer list 2>/dev/null | grep 'Persistent screen id' | head -1 | awk '{print $NF}')
-          if [ -n "$DISPLAY_ID" ]; then
-            displayplacer "id:$DISPLAY_ID res:1280x720 hz:60 color_depth:16 scaling:off origin:(0,0) degree:0" 2>/dev/null || true
-            echo "Resolution set to 1280x720 16-bit"
-          fi
-          # Disable macOS animations → VNC sends far fewer frame updates
           defaults write com.apple.universalaccess reduceMotion -bool true
           defaults write com.apple.universalaccess reduceTransparency -bool true
           defaults write NSGlobalDomain NSAutomaticWindowAnimationsEnabled -bool false
           defaults write com.apple.dock launchanim -bool false
-          defaults write NSGlobalDomain QLPanelAnimationDuration -float 0
-          defaults write com.apple.dock expose-animation-duration -float 0.1
           defaults write NSGlobalDomain NSWindowResizeTime -float 0.001
           killall Dock 2>/dev/null || true
-          echo "Animations disabled"
 
       - name: Free up RAM (disable unused services)
         run: |
@@ -46,93 +35,51 @@ jobs:
           echo "RAM freed. Available memory:"
           vm_stat | grep "Pages free\|Pages inactive"
 
-      - name: Grant TCC permissions to ARDAgent (screen capture + control)
+      - name: Install DeskIn
+        run: |
+          curl -L "https://dl.deskin.io/mac/DeskIn_Setup_v3.3.3.3.pkg" -o /tmp/deskin.pkg
+          sudo installer -pkg /tmp/deskin.pkg -target /
+          echo "DeskIn installed"
+
+      - name: Grant TCC permissions to DeskIn (screen capture + control)
         run: |
           TCC_DB="/Library/Application Support/com.apple.TCC/TCC.db"
+          BUNDLE_ID=$(defaults read /Applications/DeskIn.app/Contents/Info CFBundleIdentifier 2>/dev/null || \
+                      defaults read "/Applications/Deskln.app/Contents/Info" CFBundleIdentifier 2>/dev/null || \
+                      echo "io.deskin.DeskIn")
+          echo "DeskIn Bundle ID: $BUNDLE_ID"
           for SERVICE in kTCCServiceScreenCapture kTCCServiceAccessibility kTCCServicePostEvent kTCCServiceListenEvent; do
-            for CLIENT in com.apple.RemoteDesktop com.apple.screensharing.agent; do
-              sudo sqlite3 "$TCC_DB" \
-                "INSERT OR REPLACE INTO access \
-                (service, client, client_type, auth_value, auth_reason, auth_version) \
-                VALUES ('$SERVICE', '$CLIENT', 0, 2, 4, 1);" 2>/dev/null || true
-            done
+            sudo sqlite3 "$TCC_DB" \
+              "INSERT OR REPLACE INTO access \
+              (service, client, client_type, auth_value, auth_reason, auth_version) \
+              VALUES ('$SERVICE', '$BUNDLE_ID', 0, 2, 4, 1);" 2>/dev/null || true
           done
-          echo "TCC permissions granted (screen capture + control)"
+          echo "TCC permissions granted for DeskIn"
 
-      - name: Create vncuser with known password
+      - name: Start DeskIn and get device ID
         run: |
-          # Create brand-new local user (dscl -passwd works on new user, no old pw needed)
-          sudo dscl . -create /Users/vncuser
-          sudo dscl . -create /Users/vncuser UserShell /bin/bash
-          sudo dscl . -create /Users/vncuser RealName "VNC User"
-          sudo dscl . -create /Users/vncuser UniqueID 503
-          sudo dscl . -create /Users/vncuser PrimaryGroupID 80
-          sudo dscl . -create /Users/vncuser NFSHomeDirectory /Users/vncuser
-          sudo dscl . -passwd /Users/vncuser "Mac@1234"
-          sudo dscl . -append /Groups/admin GroupMembership vncuser
-          sudo createhomedir -c -u vncuser 2>/dev/null || true
-          # Skip macOS setup wizard for vncuser
-          sudo -u vncuser defaults write com.apple.SetupAssistant DidSeePrivacyConsent -bool true
-          sudo -u vncuser defaults write com.apple.SetupAssistant DidSeeCloudSetup -bool true
-          sudo -u vncuser defaults write com.apple.SetupAssistant DidSeeSiriSetup -bool true
-          sudo -u vncuser defaults write com.apple.SetupAssistant GestureMovieSeen none
-          sudo -u vncuser defaults write com.apple.SetupAssistant LastSeenCloudProductVersion "$(sw_vers -productVersion)"
-          sudo -u vncuser defaults write com.apple.SetupAssistant LastSeenBuddyBuildVersion "$(sw_vers -buildVersion)"
-          echo "vncuser created with password Mac@1234"
-
-      - name: Enable VNC Screen Sharing
-        run: |
-          sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
-            -activate -configure \
-            -allowAccessFor -allUsers \
-            -privs -all \
-            -clientopts -setvnclegacy -vnclegacy yes \
-            -clientopts -setvncpw -vncpw "Mac@1234" \
-            -restart -agent
-          sleep 3
-          sudo launchctl load -w /System/Library/LaunchDaemons/com.apple.screensharing.plist 2>/dev/null || true
-          sleep 2
-          echo "VNC ready - Username: vncuser  Password: Mac@1234"
-
-      - name: Install noVNC and websockify
-        run: |
-          pip3 install websockify --break-system-packages
-          git clone --depth 1 https://github.com/novnc/noVNC.git /tmp/novnc
-
-      - name: Start noVNC proxy with WebSocket compression
-        run: |
-          # --compress enables WebSocket permessage-deflate compression → reduces Cloudflare tunnel data
-          websockify --compress --web=/tmp/novnc 6080 localhost:5900 &
-          sleep 3
-
-      - name: Start bore TCP tunnel (native VNC - low lag)
-        run: |
-          # bore = direct TCP tunnel, no HTTP overhead, much faster than Cloudflare for VNC
-          curl -L https://github.com/ekzhang/bore/releases/download/v0.5.0/bore-v0.5.0-aarch64-apple-darwin.tar.gz \
-            -o /tmp/bore.tar.gz 2>/dev/null
-          tar xzf /tmp/bore.tar.gz -C /tmp/
-          chmod +x /tmp/bore
-          /tmp/bore local 5900 --to bore.pub > /tmp/bore.log 2>&1 &
-          sleep 6
-          BORE_PORT=$(grep -oE 'listening at bore\.pub:[0-9]+' /tmp/bore.log | grep -oE '[0-9]+$' | head -1)
+          open -a DeskIn 2>/dev/null || open -a Deskln 2>/dev/null || true
+          sleep 20
+          # Find device ID from preferences and config files
+          BUNDLE_ID=$(defaults read /Applications/DeskIn.app/Contents/Info CFBundleIdentifier 2>/dev/null || echo "io.deskin.DeskIn")
+          PREF_FILE=~/Library/Preferences/${BUNDLE_ID}.plist
+          PREF_ID=$(defaults read "$BUNDLE_ID" 2>/dev/null | grep -i 'deviceid\|device_id\|devid\|peerid' | grep -oE '[0-9]{6,12}' | head -1)
+          CONFIG_ID=$(find ~/Library/Application\ Support/ /Library/Application\ Support/ -maxdepth 5 \
+            \( -name "*.conf" -o -name "*.json" -o -name "*.ini" -o -name "*.plist" \) 2>/dev/null | \
+            xargs grep -ril "deviceid\|device_id" 2>/dev/null | head -3 | \
+            xargs grep -oh '[0-9]\{6,12\}' 2>/dev/null | head -1)
+          DEVICE_ID="${PREF_ID:-$CONFIG_ID}"
           echo "========================================"
-          echo "  [NATIVE VNC - LOWEST LAG] Use VNC app:"
-          echo "  Host: bore.pub   Port: ${BORE_PORT}"
-          echo "  Password: Mac@1234"
+          echo "  DeskIn is running!"
+          if [ -n "$DEVICE_ID" ]; then
+            echo "  Device ID: $DEVICE_ID"
+          else
+            echo "  Device ID: SSH in (tmate below) and run:"
+            echo "  find ~/Library -path '*esk*' -type f 2>/dev/null | xargs grep -rl device"
+          fi
           echo ""
-          echo "  Apps: RealVNC Viewer / TigerVNC / Screens"
-          echo "========================================"
-
-      - name: Install and start Cloudflare tunnel (browser fallback)
-        run: |
-          brew install cloudflared
-          cloudflared tunnel --url http://localhost:6080 > /tmp/cf.log 2>&1 &
-          sleep 12
-          CF_URL=$(grep -oE 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' /tmp/cf.log | head -1)
-          echo "========================================"
-          echo "  [BROWSER - more lag] noVNC URL:"
-          echo "  ${CF_URL}/vnc.html?autoconnect=true&quality=3&compression=3&resize=scale"
-          echo "  VNC Password: Mac@1234"
+          echo "  Connect via: DeskIn app on your PC/phone"
+          echo "  Temporary password: shown inside DeskIn app"
           echo "========================================"
 
       - name: Start tmate SSH session (detached)
