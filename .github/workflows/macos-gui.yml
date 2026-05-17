@@ -13,18 +13,18 @@ jobs:
           open -a Safari
           sleep 4
 
-      - name: Grant screen recording TCC permission to ARDAgent
+      - name: Grant TCC permissions to ARDAgent (screen capture + control)
         run: |
-          # Allow ARDAgent to capture screen (fixes "Screen recording might be disabled")
-          sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" \
-            "INSERT OR REPLACE INTO access \
-            (service, client, client_type, auth_value, auth_reason, auth_version) \
-            VALUES ('kTCCServiceScreenCapture', 'com.apple.RemoteDesktop', 0, 2, 4, 1);" 2>/dev/null || true
-          sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" \
-            "INSERT OR REPLACE INTO access \
-            (service, client, client_type, auth_value, auth_reason, auth_version) \
-            VALUES ('kTCCServiceScreenCapture', 'com.apple.screensharing.agent', 0, 2, 4, 1);" 2>/dev/null || true
-          echo "TCC screen recording permission granted"
+          TCC_DB="/Library/Application Support/com.apple.TCC/TCC.db"
+          for SERVICE in kTCCServiceScreenCapture kTCCServiceAccessibility kTCCServicePostEvent kTCCServiceListenEvent; do
+            for CLIENT in com.apple.RemoteDesktop com.apple.screensharing.agent; do
+              sudo sqlite3 "$TCC_DB" \
+                "INSERT OR REPLACE INTO access \
+                (service, client, client_type, auth_value, auth_reason, auth_version) \
+                VALUES ('$SERVICE', '$CLIENT', 0, 2, 4, 1);" 2>/dev/null || true
+            done
+          done
+          echo "TCC permissions granted (screen capture + control)"
 
       - name: Create vncuser with known password
         run: |
