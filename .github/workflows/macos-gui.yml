@@ -105,18 +105,33 @@ jobs:
           websockify --compress --web=/tmp/novnc 6080 localhost:5900 &
           sleep 3
 
-      - name: Install and start Cloudflare tunnel
+      - name: Start bore TCP tunnel (native VNC - low lag)
+        run: |
+          # bore = direct TCP tunnel, no HTTP overhead, much faster than Cloudflare for VNC
+          curl -L https://github.com/ekzhang/bore/releases/download/v0.5.0/bore-v0.5.0-aarch64-apple-darwin.tar.gz \
+            -o /tmp/bore.tar.gz 2>/dev/null
+          tar xzf /tmp/bore.tar.gz -C /tmp/
+          chmod +x /tmp/bore
+          /tmp/bore local 5900 --to bore.pub > /tmp/bore.log 2>&1 &
+          sleep 6
+          BORE_PORT=$(grep -oE 'listening at bore\.pub:[0-9]+' /tmp/bore.log | grep -oE '[0-9]+$' | head -1)
+          echo "========================================"
+          echo "  [NATIVE VNC - LOWEST LAG] Use VNC app:"
+          echo "  Host: bore.pub   Port: ${BORE_PORT}"
+          echo "  Password: Mac@1234"
+          echo ""
+          echo "  Apps: RealVNC Viewer / TigerVNC / Screens"
+          echo "========================================"
+
+      - name: Install and start Cloudflare tunnel (browser fallback)
         run: |
           brew install cloudflared
           cloudflared tunnel --url http://localhost:6080 > /tmp/cf.log 2>&1 &
           sleep 12
           CF_URL=$(grep -oE 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' /tmp/cf.log | head -1)
           echo "========================================"
-          echo "  FAST URL (use this for less lag):"
+          echo "  [BROWSER - more lag] noVNC URL:"
           echo "  ${CF_URL}/vnc.html?autoconnect=true&quality=3&compression=3&resize=scale"
-          echo ""
-          echo "  PLAIN URL (if above doesn't work):"
-          echo "  ${CF_URL}"
           echo "  VNC Password: Mac@1234"
           echo "========================================"
 
