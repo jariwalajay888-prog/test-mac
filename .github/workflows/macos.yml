@@ -13,5 +13,7 @@ jobs:
         run: |
           brew install python
           python --version
-      - name: Keep alive (20 mins max)
-        run: sleep 1200
+      - name: Setup tmate session (SSH access)
+        uses: mxschmitt/action-tmate@v3
+        with:
+          limit-access-to-actor: true
