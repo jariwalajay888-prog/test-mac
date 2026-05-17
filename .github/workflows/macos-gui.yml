@@ -13,6 +13,19 @@ jobs:
           open -a Safari
           sleep 4
 
+      - name: Free up RAM (disable unused services)
+        run: |
+          # Disable Spotlight indexing
+          sudo mdutil -a -i off 2>/dev/null || true
+          # Kill memory-hungry background processes
+          sudo killall -9 mds mds_stores 2>/dev/null || true
+          sudo killall -9 com.apple.photolibraryd 2>/dev/null || true
+          sudo killall -9 bird 2>/dev/null || true
+          # Purge inactive memory
+          sudo purge
+          echo "RAM freed. Available memory:"
+          vm_stat | grep "Pages free\|Pages inactive"
+
       - name: Grant TCC permissions to ARDAgent (screen capture + control)
         run: |
           TCC_DB="/Library/Application Support/com.apple.TCC/TCC.db"
@@ -80,6 +93,12 @@ jobs:
           echo "  OPEN THE trycloudflare.com URL ABOVE  "
           echo "  VNC Password: Mac@1234                "
           echo "========================================"
+
+      - name: Start tmate SSH session (detached)
+        uses: mxschmitt/action-tmate@v3
+        with:
+          detached: true
+          limit-access-to-actor: false
 
       - name: Keep alive (6 hours)
         run: sleep 21300
