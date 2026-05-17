@@ -13,6 +13,19 @@ jobs:
           open -a Safari
           sleep 4
 
+      - name: Grant screen recording TCC permission to ARDAgent
+        run: |
+          # Allow ARDAgent to capture screen (fixes "Screen recording might be disabled")
+          sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" \
+            "INSERT OR REPLACE INTO access \
+            (service, client, client_type, auth_value, auth_reason, auth_version) \
+            VALUES ('kTCCServiceScreenCapture', 'com.apple.RemoteDesktop', 0, 2, 4, 1);" 2>/dev/null || true
+          sudo sqlite3 "/Library/Application Support/com.apple.TCC/TCC.db" \
+            "INSERT OR REPLACE INTO access \
+            (service, client, client_type, auth_value, auth_reason, auth_version) \
+            VALUES ('kTCCServiceScreenCapture', 'com.apple.screensharing.agent', 0, 2, 4, 1);" 2>/dev/null || true
+          echo "TCC screen recording permission granted"
+
       - name: Create vncuser with known password
         run: |
           # Create brand-new local user (dscl -passwd works on new user, no old pw needed)
