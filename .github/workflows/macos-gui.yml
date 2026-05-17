@@ -12,6 +12,9 @@ jobs:
           # Create new admin user with known password for VNC
           sudo sysadminctl -addUser vncuser -password Mac@1234 -admin 2>&1 || true
           
+          # Enable auto-login for vncuser to start GUI session
+          sudo defaults write /Library/Preferences/com.apple.loginwindow autoLoginUser vncuser
+          
           # Enable Screen Sharing for all users
           sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
             -activate -configure -access -on \
@@ -20,6 +23,10 @@ jobs:
             -restart -agent
           
           sudo launchctl load -w /System/Library/LaunchDaemons/com.apple.screensharing.plist 2>/dev/null || true
+          
+          # Restart loginwindow to trigger GUI session
+          sudo launchctl kickstart -k system/com.apple.loginwindow 2>/dev/null || true
+          sleep 10
           echo "VNC ready - Username: vncuser  Password: Mac@1234"
 
       - name: Install noVNC and websockify
