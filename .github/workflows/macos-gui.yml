@@ -19,7 +19,7 @@ jobs:
 
       - name: Install noVNC and websockify
         run: |
-          pip3 install websockify
+          pip3 install websockify --break-system-packages
           git clone https://github.com/novnc/noVNC.git /tmp/novnc
 
       - name: Start noVNC proxy
