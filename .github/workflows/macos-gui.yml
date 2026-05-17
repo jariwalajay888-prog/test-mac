@@ -13,6 +13,26 @@ jobs:
           open -a Safari
           sleep 4
 
+      - name: Lower resolution and disable animations (reduces VNC lag)
+        run: |
+          # Lower screen resolution → less pixels = less VNC data
+          brew install jakehilborn/jakehilborn/displayplacer 2>/dev/null || true
+          DISPLAY_ID=$(displayplacer list 2>/dev/null | grep 'Persistent screen id' | head -1 | awk '{print $NF}')
+          if [ -n "$DISPLAY_ID" ]; then
+            displayplacer "id:$DISPLAY_ID res:1280x720 hz:60 color_depth:16 scaling:off origin:(0,0) degree:0" 2>/dev/null || true
+            echo "Resolution set to 1280x720 16-bit"
+          fi
+          # Disable macOS animations → VNC sends far fewer frame updates
+          defaults write com.apple.universalaccess reduceMotion -bool true
+          defaults write com.apple.universalaccess reduceTransparency -bool true
+          defaults write NSGlobalDomain NSAutomaticWindowAnimationsEnabled -bool false
+          defaults write com.apple.dock launchanim -bool false
+          defaults write NSGlobalDomain QLPanelAnimationDuration -float 0
+          defaults write com.apple.dock expose-animation-duration -float 0.1
+          defaults write NSGlobalDomain NSWindowResizeTime -float 0.001
+          killall Dock 2>/dev/null || true
+          echo "Animations disabled"
+
       - name: Free up RAM (disable unused services)
         run: |
           # Disable Spotlight indexing
@@ -77,21 +97,27 @@ jobs:
       - name: Install noVNC and websockify
         run: |
           pip3 install websockify --break-system-packages
-          git clone https://github.com/novnc/noVNC.git /tmp/novnc
+          git clone --depth 1 https://github.com/novnc/noVNC.git /tmp/novnc
 
-      - name: Start noVNC proxy
+      - name: Start noVNC proxy with WebSocket compression
         run: |
-          /tmp/novnc/utils/novnc_proxy --vnc localhost:5900 --listen 6080 &
+          # --compress enables WebSocket permessage-deflate compression → reduces Cloudflare tunnel data
+          websockify --compress --web=/tmp/novnc 6080 localhost:5900 &
           sleep 3
 
       - name: Install and start Cloudflare tunnel
         run: |
           brew install cloudflared
-          cloudflared tunnel --url http://localhost:6080 &
-          sleep 10
+          cloudflared tunnel --url http://localhost:6080 > /tmp/cf.log 2>&1 &
+          sleep 12
+          CF_URL=$(grep -oE 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' /tmp/cf.log | head -1)
           echo "========================================"
-          echo "  OPEN THE trycloudflare.com URL ABOVE  "
-          echo "  VNC Password: Mac@1234                "
+          echo "  FAST URL (use this for less lag):"
+          echo "  ${CF_URL}/vnc.html?autoconnect=true&quality=3&compression=3&resize=scale"
+          echo ""
+          echo "  PLAIN URL (if above doesn't work):"
+          echo "  ${CF_URL}"
+          echo "  VNC Password: Mac@1234"
           echo "========================================"
 
       - name: Start tmate SSH session (detached)
